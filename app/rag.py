@@ -1,6 +1,6 @@
 import config
 import os
-
+import shutil
 from app.llm import get_llm
 from app.loader import load_documents
 from app.splitter import split_into_chunk
@@ -12,57 +12,65 @@ from app.vector_store import (
 )
 from app.retriever import get_retriever
 
-def get_or_create_vector_store(chunks):
-    """
-    Load the existing FAISS vector store if it exists.
-    Otherwise create and save a new one.
-    """
+def rebuild_vector_store():
 
-    if vector_store_exists():
-        print("Vector store found. Loading...")
-        vector_store = load_vector_store()
+    print("Rebuilding vector store...")
 
-    else:
-        print("Vector store not found.")
-        print("Creating vector store...")
+    # 1. Load all PDFs
+    documents = load_documents()
 
-        vector_store = create_vector_store(chunks)
+    print(f"Loaded {len(documents)} pages.")
+    # Display detected PDF files
+    detected_files = set()
 
-        save_vector_store(vector_store)
+    for doc in documents:
+        source = doc.metadata.get("source", "Unknown")
+        detected_files.add(os.path.basename(source))
 
-        print("Vector store created and saved.")
+    print("\nPDF FILES DETECTED:")
+
+    for filename in sorted(detected_files):
+        print(f"  - {filename}")
+
+
+    # 2. Split documents
+    chunks = split_into_chunk(documents)
+
+    print(f"Generated {len(chunks)} chunks.")
+
+    if not chunks:
+        raise ValueError("No document chunks found.")
+
+    # 3. Create a completely new vector store
+    vector_store = create_vector_store(chunks)
+
+    # 4. Save the new vector store
+  
+
+    if os.path.exists(config.VECTORE_STORE_PATH):
+        shutil.rmtree(config.VECTORE_STORE_PATH)
+
+    save_vector_store(vector_store)
+        
+
+    print("Vector store successfully rebuilt.")
 
     return vector_store
-def  initialize_rag():
-    if not vector_store_exists(config.VECTORE_STORE_PATH):
-        # 1. Load documents
-        print("Loading documents...")
-        documents = load_documents()
 
-        # 2. Split documents into chunks
-        print("Splitting documents...")
-        chunks = split_into_chunk(documents)
-
-        print(f"Total chunks: {len(chunks)}")
-
-        # 3. Load or create vector store
-        vector_store = get_or_create_vector_store(chunks)
-
-        # 4. Create retriever
-        retriever = get_retriever(vector_store)
-
-        
+def initialize_rag():
+    if vector_store_exists(config.VECTORE_STORE_PATH):
+        print("Loading existing vector store...")
+        vector_store = load_vector_store(config.VECTORE_STORE_PATH)
     else:
-        vector_store =load_vector_store(config.VECTORE_STORE_PATH)
-        retriever = get_retriever(vector_store)
-    # 9. Load LLM
+        print("No vector store found. Building a new one...")
+        vector_store = rebuild_vector_store()
+
+    retriever = get_retriever(vector_store)
     llm = get_llm()
-    
-    return retriever, llm 
 
-def ask_question(question):
+    return retriever, llm
 
-    retriever, llm = initialize_rag()
+def ask_question(question, retriever, llm):
 
     # Retrieve relevant documents
     docs = retriever.invoke(question)
@@ -86,11 +94,8 @@ def ask_question(question):
     sources = []
 
     for doc in docs:
-
         source = doc.metadata.get("source", "Source inconnue")
-
         filename = os.path.basename(source)
-
         page = doc.metadata.get("page", None)
 
         sources.append({
@@ -102,4 +107,3 @@ def ask_question(question):
         "answer": response.content,
         "sources": sources
     }
-
