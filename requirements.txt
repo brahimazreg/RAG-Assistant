@@ -1,0 +1,12 @@
+
+langchain
+langchain-core
+langchain-community
+
+langchain_text_splitters
+faiss-cpu
+langchain_google_genai 
+
+streamlit
+python-dotenv
+numpy
